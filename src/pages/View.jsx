@@ -24,7 +24,6 @@ import {
 import {
   Receipt,
   TrendingUp,
-  CalendarToday,
   PieChart as PieChartIcon,
   BarChart as BarChartIcon,
   FilterList,
@@ -34,8 +33,8 @@ import {
   TrendingDown,
   AccountBalanceWallet
 } from '@mui/icons-material';
-import { motion, AnimatePresence } from 'framer-motion';
-import React, { useEffect, useState, useMemo } from 'react';
+import { motion } from 'framer-motion';
+import React, { useEffect, useState, useMemo, useCallback, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'react-toastify';
@@ -54,9 +53,9 @@ import {
 import { host } from '../components/api';
 import ExpenseTable from '../components/Table';
 
-// SMOOTH BUBBLES
-const ProfessionalBubbles = () => {
-  const [bubbles] = useState(() => {
+// OPTIMIZED BUBBLES - Memoized and GPU-accelerated
+const ProfessionalBubbles = memo(() => {
+  const bubbles = useMemo(() => {
     return Array.from({ length: 20 }, (_, i) => ({
       id: i,
       x: Math.random() * 100,
@@ -66,7 +65,7 @@ const ProfessionalBubbles = () => {
       opacity: Math.random() * 0.2 + 0.1,
       drift: (Math.random() - 0.5) * 30
     }));
-  });
+  }, []);
 
   return (
     <Box sx={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', overflow: 'hidden', pointerEvents: 'none', zIndex: 0 }}>
@@ -94,16 +93,20 @@ const ProfessionalBubbles = () => {
             border: `2px solid ${alpha('#8b5cf6', bubble.opacity * 0.6)}`,
             boxShadow: `inset -20px -20px 40px ${alpha('#fff', 0.5)}, 0 20px 50px ${alpha('#8b5cf6', bubble.opacity * 0.3)}`,
             filter: 'blur(0.5px)',
-            willChange: 'transform, opacity'
+            willChange: 'transform, opacity',
+            // GPU ACCELERATION
+            transform: 'translateZ(0)',
+            backfaceVisibility: 'hidden',
+            perspective: 1000
           }}
         />
       ))}
     </Box>
   );
-};
+});
 
-// Delete Dialog
-const DeleteDialog = ({ open, onClose, onConfirm, expense }) => (
+// Delete Dialog - Memoized
+const DeleteDialog = memo(({ open, onClose, onConfirm, expense }) => (
   <Dialog
     open={open}
     onClose={onClose}
@@ -135,10 +138,10 @@ const DeleteDialog = ({ open, onClose, onConfirm, expense }) => (
       <Button onClick={onConfirm} variant="contained" color="error" startIcon={<Delete />}>Delete</Button>
     </DialogActions>
   </Dialog>
-);
+));
 
-// Custom Tooltip
-const CustomTooltip = ({ active, payload }) => {
+// Custom Tooltip - Memoized
+const CustomTooltip = memo(({ active, payload }) => {
   if (active && payload && payload.length) {
     return (
       <Paper
@@ -165,7 +168,72 @@ const CustomTooltip = ({ active, payload }) => {
     );
   }
   return null;
-};
+});
+
+// STATS CARD - Memoized component
+const StatCard = memo(({ stat, index }) => {
+  const TrendIcon = stat.trendIcon;
+  return (
+    <Grid size={{ xs: 12, sm: 4 }}>
+      <motion.div
+        initial={{ opacity: 0, y: 15 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: index * 0.08, duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
+      >
+        <Paper
+          elevation={0}
+          sx={{
+            p: 2.5,
+            borderRadius: 2,
+            border: '1px solid',
+            borderColor: alpha(stat.color, 0.2),
+            backgroundColor: alpha('#fff', 0.85),
+            backdropFilter: 'blur(10px)',
+            transition: 'all 0.25s ease',
+            '&:hover': {
+              borderColor: stat.color,
+              boxShadow: `0 8px 24px ${alpha(stat.color, 0.15)}`,
+              transform: 'translateY(-2px)'
+            },
+            // GPU ACCELERATION
+            transform: 'translateZ(0)',
+            willChange: 'transform'
+          }}
+        >
+          <Stack direction="row" spacing={2} alignItems="center">
+            <Box
+              sx={{
+                width: 52,
+                height: 52,
+                borderRadius: 1.5,
+                backgroundColor: stat.bgColor,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <stat.icon sx={{ color: stat.color, fontSize: 26 }} />
+            </Box>
+            <Box flex={1}>
+              <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>
+                {stat.label}
+              </Typography>
+              <Typography variant="h6" fontWeight={700} color="text.primary">
+                {stat.value}
+              </Typography>
+              <Stack direction="row" spacing={0.5} alignItems="center">
+                {TrendIcon && <TrendIcon sx={{ fontSize: 14, color: stat.trendColor }} />}
+                <Typography variant="caption" color={stat.trendColor}>
+                  {stat.trend}
+                </Typography>
+              </Stack>
+            </Box>
+          </Stack>
+        </Paper>
+      </motion.div>
+    </Grid>
+  );
+});
 
 export default function View() {
   const navigate = useNavigate();
@@ -177,7 +245,7 @@ export default function View() {
   const [filterCategory, setFilterCategory] = useState('All');
   const [deleteDialog, setDeleteDialog] = useState({ open: false, expense: null });
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       const res = await axios.get(`${host}/view`);
@@ -190,17 +258,17 @@ export default function View() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchData();
+  }, [fetchData]);
+
+  const handleDeleteClick = useCallback((expense) => {
+    setDeleteDialog({ open: true, expense });
   }, []);
 
-  const handleDeleteClick = (expense) => {
-    setDeleteDialog({ open: true, expense });
-  };
-
-  const handleDeleteConfirm = async () => {
+  const handleDeleteConfirm = useCallback(async () => {
     try {
       const res = await axios.delete(`${host}/delete/${deleteDialog.expense._id}`);
       if (res.data.success) {
@@ -212,11 +280,11 @@ export default function View() {
       console.log(error);
       toast.error('Failed to delete expense');
     }
-  };
+  }, [deleteDialog.expense, fetchData]);
 
-  const handleEdit = (id) => {
+  const handleEdit = useCallback((id) => {
     navigate(`/edit/${id}`);
-  };
+  }, [navigate]);
 
   const filteredExpenses = useMemo(() => {
     return expense.filter(item => {
@@ -226,37 +294,39 @@ export default function View() {
     });
   }, [expense, searchTerm, filterCategory]);
 
-  // IMPROVED METRICS - More meaningful!
-  const totalExpense = filteredExpenses.reduce((sum, item) => sum + item.amount, 0);
-  
-  const now = new Date();
-  const thisMonth = filteredExpenses.filter(item => {
-    const date = new Date(item.createdAt);
-    return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
-  });
-  const thisMonthTotal = thisMonth.reduce((sum, item) => sum + item.amount, 0);
+  // OPTIMIZED CALCULATIONS - All in one useMemo
+  const calculations = useMemo(() => {
+    const totalExpense = filteredExpenses.reduce((sum, item) => sum + item.amount, 0);
+    
+    const now = new Date();
+    const thisMonth = filteredExpenses.filter(item => {
+      const date = new Date(item.createdAt);
+      return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+    });
+    const thisMonthTotal = thisMonth.reduce((sum, item) => sum + item.amount, 0);
 
-  const lastMonth = filteredExpenses.filter(item => {
-    const date = new Date(item.createdAt);
-    const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    return date.getMonth() === lastMonthDate.getMonth() && date.getFullYear() === lastMonthDate.getFullYear();
-  });
-  const lastMonthTotal = lastMonth.reduce((sum, item) => sum + item.amount, 0);
+    const lastMonth = filteredExpenses.filter(item => {
+      const date = new Date(item.createdAt);
+      const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      return date.getMonth() === lastMonthDate.getMonth() && date.getFullYear() === lastMonthDate.getFullYear();
+    });
+    const lastMonthTotal = lastMonth.reduce((sum, item) => sum + item.amount, 0);
 
-  // Calculate trend
-  const trend = lastMonthTotal > 0 
-    ? ((thisMonthTotal - lastMonthTotal) / lastMonthTotal * 100).toFixed(1)
-    : thisMonthTotal > 0 ? 100 : 0;
+    const trend = lastMonthTotal > 0 
+      ? ((thisMonthTotal - lastMonthTotal) / lastMonthTotal * 100).toFixed(1)
+      : thisMonthTotal > 0 ? 100 : 0;
 
-  // Highest expense
-  const highestExpense = filteredExpenses.length > 0 
-    ? Math.max(...filteredExpenses.map(e => e.amount))
-    : 0;
+    const highestExpense = filteredExpenses.length > 0 
+      ? Math.max(...filteredExpenses.map(e => e.amount))
+      : 0;
 
-  const stats = [
+    return { totalExpense, thisMonthTotal, lastMonthTotal, trend, highestExpense, thisMonth };
+  }, [filteredExpenses]);
+
+  const stats = useMemo(() => [
     { 
       label: 'Total Expenses', 
-      value: `₹${totalExpense.toLocaleString('en-IN')}`, 
+      value: `₹${calculations.totalExpense.toLocaleString('en-IN')}`, 
       icon: Receipt, 
       color: '#8b5cf6', 
       bgColor: alpha('#8b5cf6', 0.12),
@@ -265,37 +335,39 @@ export default function View() {
     },
     { 
       label: 'This Month', 
-      value: `₹${thisMonthTotal.toLocaleString('en-IN')}`, 
+      value: `₹${calculations.thisMonthTotal.toLocaleString('en-IN')}`, 
       icon: AccountBalanceWallet, 
       color: '#6366f1', 
       bgColor: alpha('#6366f1', 0.12),
-      trend: `${trend >= 0 ? '+' : ''}${trend}% vs last month`,
-      trendColor: trend >= 0 ? 'error.main' : 'success.main',
-      trendIcon: trend >= 0 ? TrendingUp : TrendingDown
+      trend: `${calculations.trend >= 0 ? '+' : ''}${calculations.trend}% vs last month`,
+      trendColor: calculations.trend >= 0 ? 'error.main' : 'success.main',
+      trendIcon: calculations.trend >= 0 ? TrendingUp : TrendingDown
     },
     { 
       label: 'Highest Expense', 
-      value: `₹${highestExpense.toLocaleString('en-IN')}`, 
+      value: `₹${calculations.highestExpense.toLocaleString('en-IN')}`, 
       icon: TrendingUp, 
       color: '#a78bfa', 
       bgColor: alpha('#a78bfa', 0.12),
-      trend: thisMonth.length > 0 ? `${thisMonth.length} this month` : 'No expenses',
+      trend: calculations.thisMonth.length > 0 ? `${calculations.thisMonth.length} this month` : 'No expenses',
       trendColor: 'text.secondary'
     }
-  ];
+  ], [calculations, filteredExpenses.length]);
 
-  const categoryData = filteredExpenses.reduce((acc, item) => {
-    const existing = acc.find(x => x.name === item.category);
-    if (existing) {
-      existing.value += item.amount;
-      existing.count += 1;
-    } else {
-      acc.push({ name: item.category, value: item.amount, count: 1 });
-    }
-    return acc;
-  }, []).sort((a, b) => b.value - a.value);
+  const categoryData = useMemo(() => {
+    return filteredExpenses.reduce((acc, item) => {
+      const existing = acc.find(x => x.name === item.category);
+      if (existing) {
+        existing.value += item.amount;
+        existing.count += 1;
+      } else {
+        acc.push({ name: item.category, value: item.amount, count: 1 });
+      }
+      return acc;
+    }, []).sort((a, b) => b.value - a.value);
+  }, [filteredExpenses]);
 
-  const COLORS = ['#8b5cf6', '#6366f1', '#a78bfa', '#c084fc', '#e9d5ff', '#ddd6fe', '#ede9fe'];
+  const COLORS = useMemo(() => ['#8b5cf6', '#6366f1', '#a78bfa', '#c084fc', '#e9d5ff', '#ddd6fe', '#ede9fe'], []);
 
   const monthlyData = useMemo(() => {
     const monthMap = {};
@@ -325,7 +397,7 @@ export default function View() {
       .slice(-6);
   }, [filteredExpenses]);
 
-  const categories = ['All', ...new Set(expense.map(e => e.category))];
+  const categories = useMemo(() => ['All', ...new Set(expense.map(e => e.category))], [expense]);
 
   return (
     <>
@@ -430,67 +502,9 @@ export default function View() {
               </Grid>
             ) : (
               <Grid container spacing={2}>
-                {stats.map((stat, index) => {
-                  const TrendIcon = stat.trendIcon;
-                  return (
-                    <Grid key={stat.label} size={{ xs: 12, sm: 4 }}>
-                      <motion.div
-                        initial={{ opacity: 0, y: 15 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: index * 0.08, duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
-                        whileHover={{ y: -3, transition: { duration: 0.2, ease: 'easeOut' } }}
-                      >
-                        <Paper
-                          elevation={0}
-                          sx={{
-                            p: 2.5,
-                            borderRadius: 2,
-                            border: '1px solid',
-                            borderColor: alpha(stat.color, 0.2),
-                            backgroundColor: alpha('#fff', 0.85),
-                            backdropFilter: 'blur(10px)',
-                            transition: 'all 0.25s ease',
-                            '&:hover': {
-                              borderColor: stat.color,
-                              boxShadow: `0 8px 24px ${alpha(stat.color, 0.15)}`,
-                              transform: 'translateY(-2px)'
-                            }
-                          }}
-                        >
-                          <Stack direction="row" spacing={2} alignItems="center">
-                            <Box
-                              sx={{
-                                width: 52,
-                                height: 52,
-                                borderRadius: 1.5,
-                                backgroundColor: stat.bgColor,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center'
-                              }}
-                            >
-                              <stat.icon sx={{ color: stat.color, fontSize: 26 }} />
-                            </Box>
-                            <Box flex={1}>
-                              <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>
-                                {stat.label}
-                              </Typography>
-                              <Typography variant="h6" fontWeight={700} color="text.primary">
-                                {stat.value}
-                              </Typography>
-                              <Stack direction="row" spacing={0.5} alignItems="center">
-                                {TrendIcon && <TrendIcon sx={{ fontSize: 14, color: stat.trendColor }} />}
-                                <Typography variant="caption" color={stat.trendColor}>
-                                  {stat.trend}
-                                </Typography>
-                              </Stack>
-                            </Box>
-                          </Stack>
-                        </Paper>
-                      </motion.div>
-                    </Grid>
-                  );
-                })}
+                {stats.map((stat, index) => (
+                  <StatCard key={stat.label} stat={stat} index={index} />
+                ))}
               </Grid>
             )}
 
@@ -603,7 +617,7 @@ export default function View() {
           </Stack>
         </Container>
 
-        {/* SUPERB FAB - Enhanced with multiple effects! */}
+        {/* FAB */}
         <Zoom in={true} timeout={400}>
           <Box
             sx={{
@@ -613,7 +627,6 @@ export default function View() {
               zIndex: 1000
             }}
           >
-            {/* Pulsing ring effect */}
             <motion.div
               animate={{
                 scale: [1, 1.3, 1],
@@ -633,7 +646,6 @@ export default function View() {
               }}
             />
 
-            {/* Glowing shadow pulse */}
             <motion.div
               animate={{ 
                 boxShadow: [
@@ -654,6 +666,7 @@ export default function View() {
                   boxShadow: `0 8px 32px ${alpha('#8b5cf6', 0.4)}`,
                   position: 'relative',
                   overflow: 'hidden',
+                  transform: 'translateZ(0)', // GPU ACCELERATION
                   '&::before': {
                     content: '""',
                     position: 'absolute',
@@ -666,14 +679,14 @@ export default function View() {
                   },
                   '&:hover': {
                     background: 'linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%)',
-                    transform: 'scale(1.08) translateY(-2px)',
+                    transform: 'scale(1.08) translateY(-2px) translateZ(0)',
                     boxShadow: `0 12px 48px ${alpha('#8b5cf6', 0.6)}`,
                     '&::before': {
                       left: '100%'
                     }
                   },
                   '&:active': {
-                    transform: 'scale(0.95)',
+                    transform: 'scale(0.95) translateZ(0)',
                     boxShadow: `0 4px 16px ${alpha('#8b5cf6', 0.4)}`
                   },
                   transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
