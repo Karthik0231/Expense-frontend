@@ -366,7 +366,7 @@ export default function View() {
                       letterSpacing: '-0.02em'
                     }}
                   >
-                    Expense Dashboard
+                    Expense Dashboard - HEllo From Git 
                   </Typography>
                   <Typography variant="body2" color="text.secondary" mt={0.5}>
                     Professional expense tracking & analytics 📊
